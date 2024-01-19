@@ -1,10 +1,10 @@
 import json
-from typing import List
 
-from fastapi import FastAPI
+import sqlalchemy
+from fastapi import FastAPI, Query, Request
 
 from database import database, movie_table
-from models import Movie
+from models import Movie, PaginatedResponse
 
 app = FastAPI()
 
@@ -29,10 +29,41 @@ async def load_movies_to_database():
     return {"status": "Movies loaded successfully"}
 
 
-@app.get("/movie", response_model=List[Movie])
-async def get_all_movies():
-    query = movie_table.select()
+async def paginate(
+    request: Request, limit: int, offset: int
+) -> PaginatedResponse[Movie]:
     await database.connect()
-    results = await database.fetch_all(query)
+    query = movie_table.select().limit(limit).offset(offset)
+    movies = await database.fetch_all(query)
+    count_query = sqlalchemy.select(sqlalchemy.func.count()).select_from(movie_table)
+    total = await database.fetch_one(count_query)
+    base_url = str(request.base_url)
+    next_page = (
+        f"{base_url}movie?limit={limit}&offset={offset + limit}"
+        if offset + limit < total[0]
+        else None
+    )
+    prev_page = (
+        f"{base_url}movie?limit={limit}&offset={max(0, offset - limit)}"
+        if offset - limit >= 0
+        else None
+    )
     await database.disconnect()
-    return results
+
+    return {
+        "limit": limit,
+        "offset": offset,
+        "totalItems": total[0],
+        "nextPageUrl": next_page,
+        "prevPageUrl": prev_page,
+        "results": movies,
+    }
+
+
+@app.get("/movie", response_model=PaginatedResponse[Movie], status_code=200)
+async def get_all_movies(
+    request: Request,
+    limit: int = Query(10, gt=0),
+    offset: int = Query(0, ge=0),
+):
+    return await paginate(request, limit, offset)
