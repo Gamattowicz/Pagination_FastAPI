@@ -4,7 +4,7 @@ import sqlalchemy
 from fastapi import FastAPI, Query, Request
 
 from database import database, movie_table
-from models import Movie, PaginatedResponse, PaginatedResponseP
+from models import Movie, PaginatedResponse, PaginatedResponseC, PaginatedResponseP
 
 app = FastAPI()
 
@@ -106,3 +106,56 @@ async def get_all_movies_p(
     per_page: int = Query(10, gt=0),
 ):
     return await paginate_p(request, page, per_page)
+
+
+async def paginate_c(
+    request: Request, cursor: str = None, limit: int = 10
+) -> PaginatedResponseC[Movie]:
+    await database.connect()
+
+    if cursor is not None:
+        query = (
+            movie_table.select()
+            .where(sqlalchemy.text(f"id > {cursor}"))
+            .limit(limit + 1)
+        )
+    else:
+        query = movie_table.select().limit(limit + 1)
+
+    movies = await database.fetch_all(query)
+
+    # If we have more movies than max_results, we prepare a next cursor
+    if len(movies) > limit:
+        next_cursor = str(movies[-1].id)  # Convert to string
+        movies = movies[:-1]  # We remove the last movie, as it is not part of this page
+    else:
+        next_cursor = None
+
+    count_query = sqlalchemy.select(sqlalchemy.func.count()).select_from(movie_table)
+    total = await database.fetch_one(count_query)
+
+    await database.disconnect()
+
+    base_url = str(request.base_url)
+    next_page = (
+        f"{base_url}moviec?cursor={next_cursor}&limit={limit}"
+        if next_cursor is not None
+        else None
+    )
+
+    return {
+        "totalItems": total[0],
+        "limit": limit,
+        "nextCursor": next_cursor,
+        "nextPageUrl": next_page,
+        "results": movies,
+    }
+
+
+@app.get("/moviec", response_model=PaginatedResponseC[Movie], status_code=200)
+async def get_all_movies_c(
+    request: Request,
+    cursor: str = Query(None),
+    limit: int = Query(10, gt=0),
+):
+    return await paginate_c(request, cursor, limit)

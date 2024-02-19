@@ -41,3 +41,15 @@ class PaginatedResponseP(BaseModel, Generic[T]):
     results: List[T] = Field(
         description="List of items returned in response according to the provided parameters"
     )
+
+
+class PaginatedResponseC(BaseModel, Generic[T]):
+    totalItems: int = Field(description="Total number of items in the database")
+    limit: int = Field(description="Number of items returned in the response")
+    nextCursor: Optional[str] = None
+    Field(description="Cursor for the next page of results")
+    nextPageUrl: Optional[AnyHttpUrl] = None
+    Field(description="URL to the next page of results if available, otherwise null")
+    results: List[T] = Field(
+        description="List of items returned in response according to the provided parameters"
+    )
