@@ -2,11 +2,17 @@ import json
 
 import sqlalchemy
 from fastapi import FastAPI, Query, Request
+from fastapi_pagination import LimitOffsetPage, Page, add_pagination
+from fastapi_pagination.ext.databases import paginate
+from fastapi_pagination.links import LimitOffsetPage as LimitOffsetPageLink
+from fastapi_pagination.links import Page as PageLink
 
 from database import database, movie_table
 from models import Movie, PaginatedResponse, PaginatedResponseC, PaginatedResponseP
 
 app = FastAPI()
+
+add_pagination(app)
 
 
 @app.get("/")
@@ -29,7 +35,7 @@ async def load_movies_to_database():
     return {"status": "Movies loaded successfully"}
 
 
-async def paginate(
+async def paginate_r(
     request: Request, limit: int, offset: int
 ) -> PaginatedResponse[Movie]:
     await database.connect()
@@ -66,7 +72,7 @@ async def get_all_movies(
     limit: int = Query(10, gt=0),
     offset: int = Query(0, ge=0),
 ):
-    return await paginate(request, limit, offset)
+    return await paginate_r(request, limit, offset)
 
 
 async def paginate_p(
@@ -159,3 +165,16 @@ async def get_all_movies_c(
     limit: int = Query(10, gt=0),
 ):
     return await paginate_c(request, cursor, limit)
+
+
+LimitOffsetPage = LimitOffsetPage.with_custom_options(
+    limit=Query(10, ge=1, le=100),
+)
+
+
+@app.get("/moviel-p", response_model=Page[Movie], status_code=200)
+@app.get("/moviel-pl", response_model=PageLink[Movie], status_code=200)
+@app.get("/moviel-l", response_model=LimitOffsetPage[Movie], status_code=200)
+@app.get("/moviel-ll", response_model=LimitOffsetPageLink[Movie], status_code=200)
+async def get_all_movies_l():
+    return await paginate(database, movie_table.select())
